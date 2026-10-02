@@ -37,6 +37,32 @@ export async function apiFetch(path, options = {}) {
 }
 
 /**
+ * Safely parse JSON from a fetch Response, handling empty/HTML/error bodies without throwing.
+ */
+export async function safeJson(response) {
+  if (!response) {
+    return { success: false, message: 'No response received from server.' };
+  }
+  try {
+    const text = await response.text();
+    if (!text || text.trim().length === 0) {
+      return { success: response.ok, status: response.status, data: null };
+    }
+    return JSON.parse(text);
+  } catch (err) {
+    console.warn('[apiClient] Non-JSON server response:', response.status);
+    return {
+      success: false,
+      status: response.status,
+      error: 'SERVER_COMMUNICATION_ERROR',
+      message: response.ok
+        ? 'Received unexpected response format from server.'
+        : `Server communication error (${response.status}). Please check network or try again.`
+    };
+  }
+}
+
+/**
  * POST helper — sends JSON body and returns Response.
  */
 export async function apiPost(path, body, options = {}) {
@@ -81,4 +107,4 @@ export async function apiGet(path, params = {}, options = {}) {
   });
 }
 
-export default { apiUrl, apiFetch, apiPost, apiPut, apiDelete, apiGet };
+export default { apiUrl, apiFetch, apiPost, apiPut, apiDelete, apiGet, safeJson };

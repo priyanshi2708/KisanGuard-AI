@@ -8,7 +8,7 @@
  */
 
 import { getCurrentAccount } from './authService.js';
-import { apiGet, apiPut, apiPost } from './apiClient.js';
+import { apiGet, apiPut, apiPost, safeJson } from './apiClient.js';
 
 const STORAGE_PROFILE_PREFIX = 'kisanguard_farmer_profile_';
 const STORAGE_HISTORY_PREFIX = 'kisanguard_farmer_history_';
@@ -109,8 +109,8 @@ export async function fetchRemoteProfile() {
   try {
     const response = await apiGet('/api/user/profile');
     if (response.ok) {
-      const data = await response.json();
-      if (data.success && data.profile) {
+      const data = await safeJson(response);
+      if (data && data.success && data.profile) {
         const userId = data.profile.userId || getActiveUserId();
         localStorage.setItem(`${STORAGE_PROFILE_PREFIX}${userId}`, JSON.stringify(data.profile));
         return data.profile;

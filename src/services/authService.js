@@ -10,7 +10,7 @@
  * - No fake or demo accounts.
  */
 
-import { apiPost, apiGet, apiPut } from './apiClient.js';
+import { apiPost, apiGet, apiPut, safeJson } from './apiClient.js';
 
 const STORAGE_CURRENT_ACCOUNT_KEY = 'kisanguard_account';
 
@@ -37,7 +37,7 @@ export const registerAccount = async ({ name, phone = '', email, password, langu
     role
   });
 
-  const data = await response.json();
+  const data = await safeJson(response);
 
   if (!response.ok || !data.success) {
     if (data.errorType === 'EMAIL_ALREADY_EXISTS') {
@@ -78,7 +78,7 @@ export const loginAccount = async ({ identifier, email, password }) => {
     password: loginPassword
   });
 
-  const data = await response.json();
+  const data = await safeJson(response);
 
   if (!response.ok || !data.success) {
     if (response.status === 401 || data.errorType === 'INVALID_CREDENTIALS') {
@@ -103,8 +103,8 @@ export const getMe = async () => {
   try {
     const response = await apiGet('/api/auth/me');
     if (response.ok) {
-      const data = await response.json();
-      if (data.success && data.user) {
+      const data = await safeJson(response);
+      if (data && data.success && data.user) {
         localStorage.setItem(STORAGE_CURRENT_ACCOUNT_KEY, JSON.stringify(data.user));
         if (data.user.language) {
           localStorage.setItem('language', data.user.language);

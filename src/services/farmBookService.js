@@ -7,7 +7,7 @@
  * Integrates with MongoDB backend (/api/farmbook) and maintains local cache for instant UI rendering.
  */
 
-import { apiGet, apiPost, apiPut, apiDelete } from './apiClient.js';
+import { apiGet, apiPost, apiPut, apiDelete, safeJson } from './apiClient.js';
 
 const INITIAL_EXPENSES = [];
 const INITIAL_INCOME = [];
@@ -36,8 +36,8 @@ export const fetchRemoteFarmBook = async (year = null) => {
     const params = year ? { year } : {};
     const res = await apiGet('/api/farmbook', params);
     if (res.ok) {
-      const data = await res.json();
-      if (data.success && data.data) {
+      const data = await safeJson(res);
+      if (data && data.success && data.data) {
         const { expenses, income, notes } = data.data;
         if (Array.isArray(expenses)) localStorage.setItem(getStorageKey('expenses'), JSON.stringify(expenses));
         if (Array.isArray(income)) localStorage.setItem(getStorageKey('income'), JSON.stringify(income));

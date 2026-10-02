@@ -38,6 +38,14 @@ connectDB();
 
 const app = express();
 
+// Ensure DB is connected for serverless invocations
+app.use(async (req, res, next) => {
+  if (req.path.startsWith('/api')) {
+    await connectDB().catch(err => console.error('[DB Middleware] Error:', err));
+  }
+  next();
+});
+
 // ── Middleware ───────────────────────────────────────────────────────────────
 app.use(cookieParser());
 
@@ -981,12 +989,16 @@ if (fs.existsSync(distPath)) {
   console.log(`📦 Serving production build from: ${distPath}`);
 }
 
-// ── Start ─────────────────────────────────────────────────────────────────────
+// ── Start (Standalone Node Server) ──────────────────────────────────────────
 const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => {
-  console.log(`\n✅ KisanGuard AI Backend running on http://localhost:${PORT}`);
-  console.log(`   GROQ key configured : ${!!getGroqApiKey()}`);
-  console.log(`   CORS allowed origins : ${allowedOrigins.join(', ')}`);
-  console.log(`   Routes: GET /api/weather | POST /api/chat | POST /api/vision/analyze`);
-  console.log(`           POST /api/speech/transcribe | POST /api/speech/synthesize\n`);
-});
+if (!process.env.VERCEL && process.env.NODE_ENV !== 'test') {
+  app.listen(PORT, () => {
+    console.log(`\n✅ KisanGuard AI Backend running on http://localhost:${PORT}`);
+    console.log(`   GROQ key configured : ${!!getGroqApiKey()}`);
+    console.log(`   CORS allowed origins : ${allowedOrigins.join(', ')}`);
+    console.log(`   Routes: GET /api/weather | POST /api/chat | POST /api/vision/analyze`);
+    console.log(`           POST /api/speech/transcribe | POST /api/speech/synthesize\n`);
+  });
+}
+
+export default app;
