@@ -1,0 +1,122 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    scroll-behavior: smooth;
+    font-family: 'Inter', sans-serif;
+  }
+}
+
+/* Organic torn-paper and edge clip path utilities */
+.clip-torn-paper {
+  clip-path: polygon(
+    0% 0%, 
+    100% 0%, 
+    100% 93%, 
+    95% 97%, 
+    88% 92%, 
+    82% 98%, 
+    75% 94%, 
+    68% 99%, 
+    61% 93%, 
+    54% 97%, 
+    47% 91%, 
+    40% 98%, 
+    32% 93%, 
+    25% 97%, 
+    17% 92%, 
+    10% 98%, 
+    0% 94%
+  );
+}
+
+.clip-grass-edge {
+  clip-path: polygon(
+    0 10px, 
+    2% 0px, 4% 12px, 6% 2px, 8% 14px, 10% 4px, 12% 16px, 
+    15% 2px, 18% 15px, 21% 3px, 24% 17px, 27% 5px, 30% 18px, 
+    33% 4px, 36% 16px, 39% 2px, 42% 18px, 45% 6px, 48% 19px, 
+    51% 3px, 54% 17px, 57% 5px, 60% 18px, 63% 4px, 66% 16px, 
+    69% 2px, 72% 19px, 75% 5px, 78% 17px, 81% 3px, 84% 18px, 
+    87% 4px, 90% 16px, 93% 2px, 96% 15px, 98% 3px, 100% 12px, 
+    100% 100%, 0 100%
+  );
+}
+
+.clip-curve-asymmetric {
+  clip-path: polygon(0 0, 100% 0, 88% 100%, 0 100%);
+}
+
+@media (max-width: 768px) {
+  .clip-curve-asymmetric {
+    clip-path: none;
+  }
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+}
+::-webkit-scrollbar-track {
+  background: #FFF9E9;
+}
+::-webkit-scrollbar-thumb {
+  background: #286B3F;
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #173F2A;
+}
+
+/* Leaf SVG icon pulse */
+@keyframes leafFloat {
+  0% { transform: translateY(0px) rotate(0deg); }
+  50% { transform: translateY(-15px) rotate(10deg); }
+  100% { transform: translateY(0px) rotate(0deg); }
+}
+
+.animate-leaf-float {
+  animation: leafFloat 8s ease-in-out infinite;
+}
+
+/* Leaflet Custom Map Styles & Popups */
+.leaflet-container {
+  font-family: inherit;
+  border-radius: 1.5rem;
+  z-index: 1;
+  background-color: #0A160D !important;
+}
+
+.leaflet-popup-content-wrapper {
+  background: #0A160D !important;
+  color: #FBF6EE !important;
+  border-radius: 1.25rem !important;
+  border: 1.5px solid rgba(101, 183, 65, 0.4) !important;
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.6) !important;
+  padding: 4px !important;
+}
+
+.leaflet-popup-tip {
+  background: #0A160D !important;
+  border: 1px solid rgba(101, 183, 65, 0.4);
+}
+
+.leaflet-control-zoom a {
+  background-color: #102415 !important;
+  color: #65B741 !important;
+  border-color: rgba(101, 183, 65, 0.3) !important;
+}
+
+.leaflet-control-zoom a:hover {
+  background-color: #1F3F27 !important;
+  color: #ffffff !important;
+}
+
+.custom-pulse-marker {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
