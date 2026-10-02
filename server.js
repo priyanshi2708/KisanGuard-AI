@@ -84,8 +84,11 @@ app.use(cors({
   origin(origin, callback) {
     if (!origin) return callback(null, true);
     if (allowedOrigins.includes(origin)) return callback(null, true);
-    console.warn(`[CORS] Blocked request from origin: ${origin}`);
-    callback(new Error(`Origin ${origin} not allowed by CORS policy`));
+    if (origin.includes('vercel.app') || origin.includes('localhost') || origin.includes('127.0.0.1')) {
+      return callback(null, true);
+    }
+    // Allow origin with credentials
+    return callback(null, true);
   },
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
@@ -990,18 +993,16 @@ app.use('/api', (_req, res) => {
   res.status(404).json({ error: 'API route not found' });
 });
 
-// ── Static Asset Serving & SPA Routing Fallback (Production) ─────────────────
-const distPath = path.resolve(__dirname, 'dist');
-if (fs.existsSync(distPath)) {
-  app.use(express.static(distPath));
-  app.use((req, res, next) => {
-    if (req.method === 'GET' && !req.path.startsWith('/api')) {
-      return res.sendFile(path.join(distPath, 'index.html'));
-    }
-    next();
+// ── Global JSON Error Handler ──────────────────────────────────────────
+app.use((err, _req, res, _next) => {
+  console.error('[Global Error]', err);
+  if (res.headersSent) return;
+  res.status(500).json({
+    success: false,
+    errorType: 'SERVER_ERROR',
+    message: err.message || 'An unexpected server error occurred. Please try again.'
   });
-  console.log(`📦 Serving production build from: ${distPath}`);
-}
+});
 
 // ── Start (Standalone Node Server) ──────────────────────────────────────────
 const PORT = process.env.PORT || 5000;
