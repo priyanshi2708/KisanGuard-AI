@@ -35,5 +35,5 @@ const cropHistorySchema = new mongoose.Schema(
   }
 );
 
-export const CropHistory = mongoose.model('CropHistory', cropHistorySchema);
+export const CropHistory = mongoose.models.CropHistory || mongoose.model('CropHistory', cropHistorySchema);
 export default CropHistory;

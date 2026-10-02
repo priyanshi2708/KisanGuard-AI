@@ -80,5 +80,5 @@ const farmBookSchema = new mongoose.Schema(
   }
 );
 
-export const FarmBook = mongoose.model('FarmBook', farmBookSchema);
+export const FarmBook = mongoose.models.FarmBook || mongoose.model('FarmBook', farmBookSchema);
 export default FarmBook;

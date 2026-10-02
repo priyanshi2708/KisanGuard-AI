@@ -62,5 +62,5 @@ const farmerProfileSchema = new mongoose.Schema(
   }
 );
 
-export const FarmerProfile = mongoose.model('FarmerProfile', farmerProfileSchema);
+export const FarmerProfile = mongoose.models.FarmerProfile || mongoose.model('FarmerProfile', farmerProfileSchema);
 export default FarmerProfile;
