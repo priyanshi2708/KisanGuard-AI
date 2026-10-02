@@ -46,9 +46,12 @@ app.use(async (req, res, next) => {
   next();
 });
 
-// Serverless URL normalizer: ensure req.url starts with /api if invoked via /api/* serverless handler
+// Serverless URL normalizer: extract original path if rewritten by Vercel
 app.use((req, _res, next) => {
-  if (req.url && !req.url.startsWith('/api') && !req.url.startsWith('/assets') && !req.url.startsWith('/dist') && !req.url.includes('.')) {
+  const original = req.headers['x-matched-path'] || req.headers['x-now-route-matches'] || req.headers['x-forwarded-uri'];
+  if (original && original.startsWith('/api')) {
+    req.url = original;
+  } else if (req.url && !req.url.startsWith('/api') && !req.url.startsWith('/assets') && !req.url.startsWith('/dist') && !req.url.includes('.')) {
     req.url = '/api' + (req.url.startsWith('/') ? req.url : '/' + req.url);
   }
   next();
