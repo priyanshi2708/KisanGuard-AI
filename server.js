@@ -40,8 +40,16 @@ const app = express();
 
 // Ensure DB is connected for serverless invocations
 app.use(async (req, res, next) => {
-  if (req.path.startsWith('/api')) {
+  if (req.path.startsWith('/api') || !req.path.includes('.')) {
     await connectDB().catch(err => console.error('[DB Middleware] Error:', err));
+  }
+  next();
+});
+
+// Serverless URL normalizer: ensure req.url starts with /api if invoked via /api/* serverless handler
+app.use((req, _res, next) => {
+  if (req.url && !req.url.startsWith('/api') && !req.url.startsWith('/assets') && !req.url.startsWith('/dist') && !req.url.includes('.')) {
+    req.url = '/api' + (req.url.startsWith('/') ? req.url : '/' + req.url);
   }
   next();
 });
@@ -86,8 +94,11 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
 // ── Mount Authentication & User Routes ───────────────────────────────────────
 app.use('/api/auth', authRoutes);
+app.use('/auth', authRoutes);
 app.use('/api/user', userRoutes);
+app.use('/user', userRoutes);
 app.use('/api/farmbook', farmBookRoutes);
+app.use('/farmbook', farmBookRoutes);
 
 // ── Shared helpers (identical to vite.config.js) ─────────────────────────────
 
