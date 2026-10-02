@@ -1,5 +1,7 @@
 import jwt from 'jsonwebtoken';
+import mongoose from 'mongoose';
 import User from '../models/User.js';
+import memoryStore from '../models/memoryStore.js';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'kisanguard_default_jwt_secret_2026_production';
 
@@ -38,8 +40,20 @@ export async function requireAuth(req, res, next) {
       });
     }
 
-    // Check user in database
-    const user = await User.findById(decoded.userId).select('-passwordHash');
+    // Check user in database or memory store
+    const isMongo = mongoose.connection.readyState === 1;
+    let user = null;
+
+    if (isMongo) {
+      try {
+        user = await User.findById(decoded.userId).select('-passwordHash');
+      } catch (e) {
+        user = await memoryStore.findUserById(decoded.userId);
+      }
+    } else {
+      user = await memoryStore.findUserById(decoded.userId);
+    }
+
     if (!user) {
       return res.status(401).json({
         success: false,
@@ -48,14 +62,16 @@ export async function requireAuth(req, res, next) {
       });
     }
 
+    const userId = (user._id || user.id).toString();
+
     // Attach authenticated user to request
     req.user = {
-      userId: user._id.toString(),
-      id: user._id.toString(),
+      userId,
+      id: userId,
       email: user.email,
       name: user.name,
-      language: user.language,
-      role: user.role,
+      language: user.language || 'gu',
+      role: user.role || 'farmer',
       phone: user.phone || ''
     };
 
@@ -92,15 +108,27 @@ export async function optionalAuth(req, _res, next) {
     if (token) {
       const decoded = jwt.verify(token, JWT_SECRET);
       if (decoded && decoded.userId) {
-        const user = await User.findById(decoded.userId).select('-passwordHash');
+        const isMongo = mongoose.connection.readyState === 1;
+        let user = null;
+        if (isMongo) {
+          try {
+            user = await User.findById(decoded.userId).select('-passwordHash');
+          } catch (e) {
+            user = await memoryStore.findUserById(decoded.userId);
+          }
+        } else {
+          user = await memoryStore.findUserById(decoded.userId);
+        }
+
         if (user) {
+          const userId = (user._id || user.id).toString();
           req.user = {
-            userId: user._id.toString(),
-            id: user._id.toString(),
+            userId,
+            id: userId,
             email: user.email,
             name: user.name,
-            language: user.language,
-            role: user.role,
+            language: user.language || 'gu',
+            role: user.role || 'farmer',
             phone: user.phone || ''
           };
         }
