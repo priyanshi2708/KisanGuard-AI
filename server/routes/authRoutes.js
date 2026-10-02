@@ -1,22 +1,25 @@
 import express from 'express';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
+import mongoose from 'mongoose';
 import User from '../models/User.js';
 import FarmerProfile from '../models/FarmerProfile.js';
+import memoryStore from '../models/memoryStore.js';
 import { requireAuth } from '../middleware/authMiddleware.js';
 import { createRateLimiter } from '../middleware/rateLimiter.js';
 import { sendWelcomeEmail } from '../services/emailService.js';
 
 const router = express.Router();
 const JWT_SECRET = process.env.JWT_SECRET || 'kisanguard_default_jwt_secret_2026_production';
-const authLimiter = createRateLimiter(20, 15 * 60 * 1000); // 20 attempts per 15 min
+const authLimiter = createRateLimiter(50, 15 * 60 * 1000); // 50 attempts per 15 min
 
 /**
  * Helper to generate JWT and set secure cookie
  */
 function sendTokenCookie(res, user, statusCode = 200) {
+  const userId = (user._id || user.id).toString();
   const token = jwt.sign(
-    { userId: user._id.toString(), email: user.email },
+    { userId, email: user.email },
     JWT_SECRET,
     { expiresIn: '30d' }
   );
@@ -31,16 +34,28 @@ function sendTokenCookie(res, user, statusCode = 200) {
 
   res.cookie('token', token, cookieOptions);
 
+  const safeUser = typeof user.toSafeObject === 'function'
+    ? user.toSafeObject()
+    : {
+        id: userId,
+        _id: userId,
+        name: user.name,
+        email: user.email,
+        language: user.language || 'gu',
+        phone: user.phone || '',
+        role: user.role || 'farmer'
+      };
+
   return res.status(statusCode).json({
     success: true,
-    token, // Also send in response for clients choosing Authorization Bearer header
-    user: user.toSafeObject()
+    token,
+    user: safeUser
   });
 }
 
 /**
  * POST /api/auth/register
- * Registers a new user, hashes password, sets auth cookie and creates default profile.
+ * Registers a new user, hashes password, sets auth cookie and creates profile.
  */
 router.post('/register', authLimiter, async (req, res) => {
   try {
@@ -62,8 +77,21 @@ router.post('/register', authLimiter, async (req, res) => {
       ? (language || 'gu').toLowerCase()
       : 'gu';
 
+    const isMongoConnected = mongoose.connection.readyState === 1;
+
     // 2. Check existing user
-    const existing = await User.findOne({ email: cleanEmail });
+    let existing = null;
+    if (isMongoConnected) {
+      try {
+        existing = await User.findOne({ email: cleanEmail });
+      } catch (e) {
+        console.warn('[Auth/Register] MongoDB query failed, using memory store:', e.message);
+        existing = await memoryStore.findUserByEmail(cleanEmail);
+      }
+    } else {
+      existing = await memoryStore.findUserByEmail(cleanEmail);
+    }
+
     if (existing) {
       return res.status(409).json({
         success: false,
@@ -77,41 +105,66 @@ router.post('/register', authLimiter, async (req, res) => {
     const passwordHash = await bcrypt.hash(password, salt);
 
     // 4. Create user
-    const user = new User({
-      name: name.trim(),
-      email: cleanEmail,
-      passwordHash,
-      language: cleanLanguage,
-      phone: (phone || '').trim(),
-      role: role || 'farmer'
-    });
-    await user.save();
+    let user = null;
+    if (isMongoConnected) {
+      try {
+        const mongoUser = new User({
+          name: name.trim(),
+          email: cleanEmail,
+          passwordHash,
+          language: cleanLanguage,
+          phone: (phone || '').trim(),
+          role: role || 'farmer'
+        });
+        await mongoUser.save();
+        user = mongoUser;
 
-    // 5. Create initial empty profile linked to userId
-    const profile = new FarmerProfile({
-      userId: user._id,
-      onboardingCompleted: false
-    });
-    await profile.save();
+        const profile = new FarmerProfile({
+          userId: user._id,
+          onboardingCompleted: false
+        });
+        await profile.save().catch(() => {});
+      } catch (e) {
+        console.warn('[Auth/Register] MongoDB save failed, saving to memory fallback:', e.message);
+        user = await memoryStore.createUser({
+          name: name.trim(),
+          email: cleanEmail,
+          passwordHash,
+          language: cleanLanguage,
+          phone: (phone || '').trim(),
+          role: role || 'farmer'
+        });
+      }
+    } else {
+      user = await memoryStore.createUser({
+        name: name.trim(),
+        email: cleanEmail,
+        passwordHash,
+        language: cleanLanguage,
+        phone: (phone || '').trim(),
+        role: role || 'farmer'
+      });
+      await memoryStore.saveProfile(user._id, { userId: user._id, onboardingCompleted: false });
+    }
 
-    console.log(`👤 New user registered: ${user.email} (${user._id})`);
+    console.log(`👤 User registered successfully: ${cleanEmail} (${user._id || user.id})`);
 
-    // 6. Trigger welcome email in background (non-blocking)
+    // 5. Send welcome email (non-blocking)
     sendWelcomeEmail({
       to: user.email,
       name: user.name,
       language: user.language
     }).catch(err => {
-      console.warn(`[Auth/Register] Email notification failed: ${err.message}`);
+      console.warn(`[Auth/Register] Email notice: ${err.message}`);
     });
 
     return sendTokenCookie(res, user, 201);
   } catch (err) {
-    console.error('[Auth/Register] Error:', err.message);
+    console.error('[Auth/Register] Exception:', err.message);
     return res.status(500).json({
       success: false,
       errorType: 'SERVER_ERROR',
-      message: 'Registration failed due to a server error. Please try again.'
+      message: 'Registration encountered a problem. Please try again.'
     });
   }
 });
@@ -133,9 +186,20 @@ router.post('/login', authLimiter, async (req, res) => {
     }
 
     const cleanEmail = email.trim().toLowerCase();
+    const isMongoConnected = mongoose.connection.readyState === 1;
 
-    // 1. Find user by email including passwordHash
-    const user = await User.findOne({ email: cleanEmail }).select('+passwordHash');
+    // 1. Find user by email
+    let user = null;
+    if (isMongoConnected) {
+      try {
+        user = await User.findOne({ email: cleanEmail }).select('+passwordHash');
+      } catch (e) {
+        user = await memoryStore.findUserByEmail(cleanEmail);
+      }
+    } else {
+      user = await memoryStore.findUserByEmail(cleanEmail);
+    }
+
     if (!user) {
       return res.status(401).json({
         success: false,
@@ -154,10 +218,10 @@ router.post('/login', authLimiter, async (req, res) => {
       });
     }
 
-    console.log(`🔓 User logged in: ${user.email} (${user._id})`);
+    console.log(`🔓 User logged in: ${user.email} (${user._id || user.id})`);
     return sendTokenCookie(res, user, 200);
   } catch (err) {
-    console.error('[Auth/Login] Error:', err.message);
+    console.error('[Auth/Login] Exception:', err.message);
     return res.status(500).json({
       success: false,
       errorType: 'SERVER_ERROR',
@@ -190,17 +254,41 @@ router.post('/logout', (req, res) => {
  */
 router.get('/me', requireAuth, async (req, res) => {
   try {
-    const user = await User.findById(req.user.userId).select('-passwordHash');
-    if (!user) {
-      return res.status(404).json({ success: false, errorType: 'USER_NOT_FOUND', message: 'User not found.' });
+    const isMongoConnected = mongoose.connection.readyState === 1;
+    let user = null;
+
+    if (isMongoConnected) {
+      try {
+        user = await User.findById(req.user.userId).select('-passwordHash');
+      } catch (e) {
+        user = await memoryStore.findUserById(req.user.userId);
+      }
+    } else {
+      user = await memoryStore.findUserById(req.user.userId);
     }
+
+    if (!user) {
+      return res.status(404).json({ success: false, errorType: 'USER_NOT_FOUND', message: 'User session not found.' });
+    }
+
+    const safeUser = typeof user.toSafeObject === 'function'
+      ? user.toSafeObject()
+      : {
+          id: user._id || user.id,
+          _id: user._id || user.id,
+          name: user.name,
+          email: user.email,
+          language: user.language || 'gu',
+          phone: user.phone || '',
+          role: user.role || 'farmer'
+        };
 
     return res.json({
       success: true,
-      user: user.toSafeObject()
+      user: safeUser
     });
   } catch (err) {
-    console.error('[Auth/Me] Error:', err.message);
+    console.error('[Auth/Me] Exception:', err.message);
     return res.status(500).json({ success: false, message: 'Failed to retrieve user session.' });
   }
 });

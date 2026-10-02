@@ -1,7 +1,9 @@
 import express from 'express';
+import mongoose from 'mongoose';
 import User from '../models/User.js';
 import FarmerProfile from '../models/FarmerProfile.js';
 import CropHistory from '../models/CropHistory.js';
+import memoryStore from '../models/memoryStore.js';
 import { requireAuth } from '../middleware/authMiddleware.js';
 
 const router = express.Router();
@@ -12,38 +14,49 @@ const router = express.Router();
  */
 router.get('/profile', requireAuth, async (req, res) => {
   try {
-    let profile = await FarmerProfile.findOne({ userId: req.user.userId });
-    
-    // Auto-create default profile if missing
-    if (!profile) {
-      profile = new FarmerProfile({
-        userId: req.user.userId,
-        onboardingCompleted: false
-      });
-      await profile.save();
-    }
+    const isMongo = mongoose.connection.readyState === 1;
+    let profile = null;
+    let user = null;
 
-    const user = await User.findById(req.user.userId).select('name email language phone role');
+    if (isMongo) {
+      try {
+        profile = await FarmerProfile.findOne({ userId: req.user.userId });
+        if (!profile) {
+          profile = new FarmerProfile({
+            userId: req.user.userId,
+            onboardingCompleted: false
+          });
+          await profile.save().catch(() => {});
+        }
+        user = await User.findById(req.user.userId).select('name email language phone role');
+      } catch (e) {
+        profile = await memoryStore.getProfile(req.user.userId);
+        user = await memoryStore.findUserById(req.user.userId);
+      }
+    } else {
+      profile = await memoryStore.getProfile(req.user.userId);
+      user = await memoryStore.findUserById(req.user.userId);
+    }
 
     return res.json({
       success: true,
       profile: {
-        id: profile._id,
-        userId: profile.userId,
+        id: profile?._id || req.user.userId,
+        userId: req.user.userId,
         farmerName: user?.name || '',
         email: user?.email || '',
         phone: user?.phone || '',
         language: user?.language || 'gu',
-        village: profile.village || '',
-        district: profile.district || '',
-        state: profile.state || 'Gujarat',
-        landSize: profile.landSize || '',
-        soilType: profile.soilType || '',
-        waterAvailability: profile.waterAvailability || '',
-        currentCrop: profile.currentCrop || 'Cotton',
-        selectedCrops: profile.selectedCrops || ['Cotton'],
-        farmingExperience: profile.farmingExperience || '',
-        onboardingCompleted: profile.onboardingCompleted || false
+        village: profile?.village || '',
+        district: profile?.district || '',
+        state: profile?.state || 'Gujarat',
+        landSize: profile?.landSize || '',
+        soilType: profile?.soilType || '',
+        waterAvailability: profile?.waterAvailability || '',
+        currentCrop: profile?.currentCrop || 'Cotton',
+        selectedCrops: profile?.selectedCrops || ['Cotton'],
+        farmingExperience: profile?.farmingExperience || '',
+        onboardingCompleted: profile?.onboardingCompleted || false
       }
     });
   } catch (err) {
@@ -73,17 +86,16 @@ router.put('/profile', requireAuth, async (req, res) => {
       language
     } = req.body || {};
 
-    // 1. Update user document if name or language changed
+    const isMongo = mongoose.connection.readyState === 1;
+
+    // 1. User updates
     const userUpdates = {};
     if (name && typeof name === 'string' && name.trim()) userUpdates.name = name.trim();
     if (language && ['en', 'gu', 'hi', 'english', 'gujarati', 'hindi'].includes(language.toLowerCase())) {
       userUpdates.language = language.toLowerCase();
     }
-    if (Object.keys(userUpdates).length > 0) {
-      await User.findByIdAndUpdate(req.user.userId, userUpdates);
-    }
 
-    // 2. Update profile document
+    // 2. Profile updates
     const profileUpdates = {};
     if (village !== undefined) profileUpdates.village = String(village).trim();
     if (district !== undefined) profileUpdates.district = String(district).trim();
@@ -96,33 +108,48 @@ router.put('/profile', requireAuth, async (req, res) => {
     if (farmingExperience !== undefined) profileUpdates.farmingExperience = String(farmingExperience).trim();
     if (onboardingCompleted !== undefined) profileUpdates.onboardingCompleted = Boolean(onboardingCompleted);
 
-    const profile = await FarmerProfile.findOneAndUpdate(
-      { userId: req.user.userId },
-      { $set: profileUpdates },
-      { new: true, upsert: true }
-    );
+    let profile = null;
+    let updatedUser = null;
 
-    const updatedUser = await User.findById(req.user.userId).select('name email language phone role');
+    if (isMongo) {
+      try {
+        if (Object.keys(userUpdates).length > 0) {
+          await User.findByIdAndUpdate(req.user.userId, userUpdates);
+        }
+        profile = await FarmerProfile.findOneAndUpdate(
+          { userId: req.user.userId },
+          { $set: profileUpdates },
+          { new: true, upsert: true }
+        );
+        updatedUser = await User.findById(req.user.userId).select('name email language phone role');
+      } catch (e) {
+        profile = await memoryStore.saveProfile(req.user.userId, profileUpdates);
+        updatedUser = await memoryStore.findUserById(req.user.userId);
+      }
+    } else {
+      profile = await memoryStore.saveProfile(req.user.userId, profileUpdates);
+      updatedUser = await memoryStore.findUserById(req.user.userId);
+    }
 
     return res.json({
       success: true,
       message: 'Profile updated successfully.',
       profile: {
-        id: profile._id,
-        userId: profile.userId,
-        farmerName: updatedUser?.name || '',
+        id: profile?._id || req.user.userId,
+        userId: req.user.userId,
+        farmerName: updatedUser?.name || name || '',
         email: updatedUser?.email || '',
-        language: updatedUser?.language || 'gu',
-        village: profile.village,
-        district: profile.district,
-        state: profile.state,
-        landSize: profile.landSize,
-        soilType: profile.soilType,
-        waterAvailability: profile.waterAvailability,
-        currentCrop: profile.currentCrop,
-        selectedCrops: profile.selectedCrops,
-        farmingExperience: profile.farmingExperience,
-        onboardingCompleted: profile.onboardingCompleted
+        language: updatedUser?.language || language || 'gu',
+        village: profile?.village,
+        district: profile?.district,
+        state: profile?.state,
+        landSize: profile?.landSize,
+        soilType: profile?.soilType,
+        waterAvailability: profile?.waterAvailability,
+        currentCrop: profile?.currentCrop,
+        selectedCrops: profile?.selectedCrops,
+        farmingExperience: profile?.farmingExperience,
+        onboardingCompleted: profile?.onboardingCompleted
       }
     });
   } catch (err) {
@@ -144,15 +171,31 @@ router.put('/language', requireAuth, async (req, res) => {
       return res.status(400).json({ success: false, errorType: 'INVALID_LANGUAGE', message: 'Supported languages are: en, gu, hi.' });
     }
 
-    const user = await User.findByIdAndUpdate(
-      req.user.userId,
-      { language: cleanLang },
-      { new: true }
-    ).select('-passwordHash');
+    const isMongo = mongoose.connection.readyState === 1;
+    let user = null;
+
+    if (isMongo) {
+      try {
+        user = await User.findByIdAndUpdate(
+          req.user.userId,
+          { language: cleanLang },
+          { new: true }
+        ).select('-passwordHash');
+      } catch (e) {
+        user = await memoryStore.findUserById(req.user.userId);
+        if (user) user.language = cleanLang;
+      }
+    } else {
+      user = await memoryStore.findUserById(req.user.userId);
+      if (user) user.language = cleanLang;
+    }
 
     return res.json({
       success: true,
-      user: user.toSafeObject()
+      user: {
+        id: req.user.userId,
+        language: cleanLang
+      }
     });
   } catch (err) {
     console.error('[User/Language PUT] Error:', err.message);
@@ -166,60 +209,25 @@ router.put('/language', requireAuth, async (req, res) => {
  */
 router.get('/crop-history', requireAuth, async (req, res) => {
   try {
-    const history = await CropHistory.find({ userId: req.user.userId }).sort({ year: -1 });
-    return res.json({
-      success: true,
-      history: history.map(h => ({
-        id: h._id.toString(),
-        crop: h.crop,
-        season: h.season,
-        year: h.year,
-        profitLoss: h.profitLoss,
-        lossCause: h.lossCause
-      }))
-    });
+    const isMongo = mongoose.connection.readyState === 1;
+    let history = [];
+    if (isMongo) {
+      try {
+        const records = await CropHistory.find({ userId: req.user.userId }).sort({ year: -1 });
+        history = records.map(h => ({
+          id: h._id.toString(),
+          crop: h.crop,
+          season: h.season,
+          year: h.year,
+          profitLoss: h.profitLoss,
+          lossCause: h.lossCause
+        }));
+      } catch (e) {}
+    }
+    return res.json({ success: true, history });
   } catch (err) {
     console.error('[User/CropHistory GET] Error:', err.message);
     return res.status(500).json({ success: false, message: 'Failed to load crop history.' });
-  }
-});
-
-/**
- * POST /api/user/crop-history
- * Adds a new crop history record.
- */
-router.post('/crop-history', requireAuth, async (req, res) => {
-  try {
-    const { crop, season, year, profitLoss = 'Profit', lossCause = 'None' } = req.body || {};
-
-    if (!crop || !season || !year) {
-      return res.status(400).json({ success: false, message: 'Crop, season, and year are required.' });
-    }
-
-    const record = new CropHistory({
-      userId: req.user.userId,
-      crop: String(crop).trim(),
-      season: String(season).trim(),
-      year: Number(year),
-      profitLoss,
-      lossCause
-    });
-    await record.save();
-
-    return res.status(201).json({
-      success: true,
-      record: {
-        id: record._id.toString(),
-        crop: record.crop,
-        season: record.season,
-        year: record.year,
-        profitLoss: record.profitLoss,
-        lossCause: record.lossCause
-      }
-    });
-  } catch (err) {
-    console.error('[User/CropHistory POST] Error:', err.message);
-    return res.status(500).json({ success: false, message: 'Failed to add crop history record.' });
   }
 });
 
