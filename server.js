@@ -1017,8 +1017,10 @@ app.use((err, _req, res, _next) => {
 });
 
 // ── Start (Standalone Node Server) ──────────────────────────────────────────
+const isDirectRun = process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1]);
 const PORT = process.env.PORT || 5000;
-if (!process.env.VERCEL && process.env.NODE_ENV !== 'test') {
+
+if (isDirectRun) {
   app.listen(PORT, () => {
     console.log(`\n✅ KisanGuard AI Backend running on http://localhost:${PORT}`);
     console.log(`   GROQ key configured : ${!!getGroqApiKey()}`);
