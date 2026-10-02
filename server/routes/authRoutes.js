@@ -5,7 +5,7 @@ import mongoose from 'mongoose';
 import User from '../models/User.js';
 import FarmerProfile from '../models/FarmerProfile.js';
 import memoryStore from '../models/memoryStore.js';
-import { requireAuth } from '../middleware/authMiddleware.js';
+import { requireAuth, optionalAuth } from '../middleware/authMiddleware.js';
 import { createRateLimiter } from '../middleware/rateLimiter.js';
 import { sendWelcomeEmail } from '../services/emailService.js';
 
@@ -250,10 +250,18 @@ router.post('/logout', (req, res) => {
 
 /**
  * GET /api/auth/me
- * Protected endpoint returning the authenticated user profile and session info.
+ * Session endpoint returning the authenticated user profile, or authenticated: false if not logged in.
  */
-router.get('/me', requireAuth, async (req, res) => {
+router.get('/me', optionalAuth, async (req, res) => {
   try {
+    if (!req.user || !req.user.userId) {
+      return res.json({
+        success: true,
+        authenticated: false,
+        user: null
+      });
+    }
+
     const isMongoConnected = mongoose.connection.readyState === 1;
     let user = null;
 
@@ -268,7 +276,7 @@ router.get('/me', requireAuth, async (req, res) => {
     }
 
     if (!user) {
-      return res.status(404).json({ success: false, errorType: 'USER_NOT_FOUND', message: 'User session not found.' });
+      return res.json({ success: true, authenticated: false, user: null });
     }
 
     const safeUser = typeof user.toSafeObject === 'function'
@@ -285,11 +293,12 @@ router.get('/me', requireAuth, async (req, res) => {
 
     return res.json({
       success: true,
+      authenticated: true,
       user: safeUser
     });
   } catch (err) {
     console.error('[Auth/Me] Exception:', err.message);
-    return res.status(500).json({ success: false, message: 'Failed to retrieve user session.' });
+    return res.json({ success: true, authenticated: false, user: null });
   }
 });
 

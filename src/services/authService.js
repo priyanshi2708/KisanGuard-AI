@@ -111,13 +111,18 @@ export const getMe = async () => {
         }
         return data.user;
       }
+      if (data && data.authenticated === false) {
+        localStorage.removeItem(STORAGE_CURRENT_ACCOUNT_KEY);
+        return null;
+      }
     }
     // If 401 Unauthorized, clear cached session
     if (response.status === 401) {
       localStorage.removeItem(STORAGE_CURRENT_ACCOUNT_KEY);
+      return null;
     }
   } catch (e) {
-    console.warn('[AuthService] Could not reach backend session endpoint:', e.message);
+    console.warn('[AuthService] Session check notice:', e.message);
   }
   return getCurrentAccount();
 };
