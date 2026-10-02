@@ -9,7 +9,12 @@ export default defineConfig({
     {
       name: 'kisanguard-backend-middleware',
       configureServer(server) {
-        server.middlewares.use(app);
+        server.middlewares.use((req, res, next) => {
+          if (req.url && req.url.startsWith('/api')) {
+            return app(req, res, next);
+          }
+          next();
+        });
       }
     }
   ],

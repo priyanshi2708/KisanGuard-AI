@@ -38,21 +38,10 @@ connectDB();
 
 const app = express();
 
-// Ensure DB is connected for serverless invocations
+// Ensure DB is connected for API requests
 app.use(async (req, res, next) => {
-  if (req.path.startsWith('/api') || !req.path.includes('.')) {
+  if (req.path.startsWith('/api')) {
     await connectDB().catch(err => console.error('[DB Middleware] Error:', err));
-  }
-  next();
-});
-
-// Serverless URL normalizer: extract original path if rewritten by Vercel
-app.use((req, _res, next) => {
-  const original = req.headers['x-matched-path'] || req.headers['x-now-route-matches'] || req.headers['x-forwarded-uri'];
-  if (original && original.startsWith('/api')) {
-    req.url = original;
-  } else if (req.url && !req.url.startsWith('/api') && !req.url.startsWith('/assets') && !req.url.startsWith('/dist') && !req.url.includes('.')) {
-    req.url = '/api' + (req.url.startsWith('/') ? req.url : '/' + req.url);
   }
   next();
 });
